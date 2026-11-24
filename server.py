@@ -39,6 +39,22 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         p=urlparse(self.path).path
         uid=active_user()
+        if p=="/api/update-check":
+            try:
+                import urllib.request
+                import json
+                url = "https://raw.githubusercontent.com/kumarakhil4213-maker/Siri-ai/main/version.json"
+                req = urllib.request.Request(url, headers={"User-Agent": "SIRI"})
+                with urllib.request.urlopen(req, timeout=15) as response:
+                    latest = json.loads(response.read().decode("utf-8"))
+                current = json.loads((Path(__file__).resolve().parent / "version.json").read_text(encoding="utf-8"))
+                return self.sendj(200, {
+                    "current_version": current.get("version"),
+                    "latest_version": latest.get("version"),
+                    "update_available": current.get("version") != latest.get("version")
+                })
+            except Exception as e:
+                return self.sendj(503, {"error": "Update check failed", "detail": str(e)})
         if p=="/api/status":
             return self.sendj(200,{"key_saved":bool(api_key()),"account_logged_in":bool(uid),"model":MODEL})
         if p=="/api/memories":

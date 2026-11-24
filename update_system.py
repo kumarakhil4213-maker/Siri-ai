@@ -28,6 +28,8 @@ def create_backup():
         "data",
         "start.sh",
         "update_system.py",
+        "rollback.py",
+        "check_update.py",
         "version.json"
     ]
 

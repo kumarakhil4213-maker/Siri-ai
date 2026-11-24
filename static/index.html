@@ -1,0 +1,61 @@
+<!doctype html><html lang="hi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SIRI AI</title>
+<style>
+body{margin:0;background:#09111f;color:#edf5ff;font:16px system-ui}header,main,#bottom{max-width:760px;margin:auto;padding:16px}header{border-bottom:1px solid #345;display:flex;justify-content:space-between}h1{margin:0;color:#60e5df}button{padding:11px 15px;border:1px solid #456;border-radius:12px;background:#17304a;color:white;font-size:16px}input,textarea{padding:12px;border-radius:12px;border:1px solid #456;background:#101e32;color:white;font:inherit;min-width:0}textarea{width:95%;height:55px}#chat{height:42vh;overflow:auto;background:#101b2d;padding:12px;border-radius:16px}.msg{padding:12px;margin:9px 0;border-radius:12px;white-space:pre-wrap}.user{background:#204361;text-align:right}.ai{background:#1a2940}.row{display:flex;gap:8px;margin:10px 0}.row input{flex:1;width:60%}.tabs{display:flex;gap:8px;margin:12px 0}.view{display:none}.view.on{display:block}.note{color:#9fb2c9;font-size:13px}
+</style></head><body><header><div><h1>S I R I</h1><small>GEMINI AI · SHARED MEMORY</small></div><div id="status">जाँच…</div></header><main>
+<div class="tabs"><button onclick="show('chat')">चैट</button><button onclick="show('mem')">याददाश्त</button></div>
+<section id="chat" class="view on"><div class="msg ai">नमस्ते! मुझसे हिंदी में बात कीजिए।</div></section>
+<section id="mem" class="view"><p class="note">यह वही मेमोरी है जो Termux SIRI अकाउंट इस्तेमाल करता है।</p><div class="row"><input id="memory" placeholder="याद रखने वाली बात लिखें"><button onclick="saveMem()">सेव</button></div><div id="items"></div></section>
+</main><div id="bottom"><div class="row"><textarea id="q" placeholder="अपना सवाल लिखें…"></textarea><button id="micBtn" onclick="startSiriListening()">🎤 बोलें</button>
+<button onclick="stopSiriVoice()">⏹ रोकें</button>
+<button onclick="send()">भेजें</button></div><p class="note">Termux सर्वर चालू रखें: http://127.0.0.1:8765</p></div>
+<script>
+let hist=[];
+function show(id){document.querySelectorAll('.view').forEach(x=>x.classList.toggle('on',x.id===id));if(id==='mem')loadMem()}
+function msg(t,who){let d=document.createElement('div');d.className='msg '+who;d.textContent=t;document.getElementById('chat').append(d);d.scrollIntoView()}
+async function send(){let q=document.getElementById('q').value.trim();if(!q)return;document.getElementById('q').value='';msg(q,'user');try{let r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:q,history:hist})}),d=await r.json();if(!r.ok)throw Error(d.error);msg(d.answer,'ai');speakSiriHindi(d.answer);hist.push({role:'user',text:q},{role:'assistant',text:d.answer});hist=hist.slice(-12)}catch(e){msg('त्रुटि: '+e.message,'ai')}}
+async function saveMem(){let text=document.getElementById('memory').value.trim();if(!text)return;try{let r=await fetch('/api/memory',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})}),d=await r.json();if(!r.ok)throw Error(d.error);document.getElementById('memory').value='';await loadMem();alert(d.message)}catch(e){alert(e.message)}}
+async function loadMem(){let box=document.getElementById('items');try{let r=await fetch('/api/memories'),d=await r.json();if(!r.ok)throw Error(d.error);box.innerHTML='';if(!d.items.length)box.textContent='अभी कोई याद नहीं।';d.items.forEach(x=>{let p=document.createElement('p');p.textContent='• '+(x.information||x);box.append(p)})}catch(e){box.textContent=e.message}}
+(async()=>{try{let d=await(await fetch('/api/status')).json();document.getElementById('status').textContent=(d.key_saved?'Gemini ✓':'API Key नहीं')+' | '+(d.account_logged_in?'अकाउंट ✓':'लॉगिन नहीं')}catch(e){document.getElementById('status').textContent='सर्वर बंद'}})();
+
+function speakSiriHindi(text) {
+  if (!window.speechSynthesis) {
+    alert("इस Chrome में आवाज़ उपलब्ध नहीं है।");
+    return;
+  }
+  speechSynthesis.cancel();
+  let u = new SpeechSynthesisUtterance(String(text));
+  let voices = speechSynthesis.getVoices();
+  let hindi = voices.filter(v => v.lang.toLowerCase().startsWith("hi"));
+  u.voice = hindi.find(v => /female|woman|महिला/i.test(v.name)) ||
+            hindi.find(v => /google/i.test(v.name)) || hindi[0] || null;
+  u.lang = u.voice ? u.voice.lang : "hi-IN";
+  u.rate = 0.95;
+  u.pitch = 1.08;
+  speechSynthesis.speak(u);
+}
+
+function stopSiriVoice() {
+  if (window.speechSynthesis) speechSynthesis.cancel();
+}
+
+function startSiriListening() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    alert("Chrome में हिंदी माइक सुविधा उपलब्ध नहीं है। Chrome अपडेट करें।");
+    return;
+  }
+  let rec = new SR();
+  rec.lang = "hi-IN";
+  rec.continuous = false;
+  rec.interimResults = false;
+  rec.onresult = function(e) {
+    document.getElementById("q").value = e.results[0][0].transcript;
+    send();
+  };
+  rec.onerror = function(e) {
+    alert("माइक समस्या: " + e.error + "। Chrome की Microphone अनुमति जाँचें।");
+  };
+  rec.start();
+}
+
+</script></body></html>

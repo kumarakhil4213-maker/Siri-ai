@@ -1,3 +1,4 @@
+import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -50,11 +51,56 @@ def create_backup():
             "SIRI backup completed successfully.\n",
             encoding="utf-8"
         )
+
+        manifest = {}
+        for file in sorted(target.rglob("*")):
+            if file.is_file() and file.name != "SHA256SUMS.json":
+                relative = file.relative_to(target).as_posix()
+                manifest[relative] = hashlib.sha256(file.read_bytes()).hexdigest()
+
+        (target / "SHA256SUMS.json").write_text(
+            json.dumps(manifest, indent=2),
+            encoding="utf-8"
+        )
         return str(target)
 
     except Exception:
         shutil.rmtree(target, ignore_errors=True)
         raise
+
+def verify_backup(backup_path):
+    target = Path(backup_path)
+    if not target.is_absolute() and not target.exists():
+        target = BACKUP_DIR / target
+
+    try:
+        if not (target / "BACKUP_COMPLETE.txt").is_file():
+            return False
+
+        manifest = json.loads(
+            (target / "SHA256SUMS.json").read_text(encoding="utf-8")
+        )
+
+        if not isinstance(manifest, dict) or not manifest:
+            return False
+
+        for name, expected in manifest.items():
+            relative = Path(name)
+            if relative.is_absolute() or ".." in relative.parts:
+                return False
+
+            file = target / relative
+            if not file.is_file():
+                return False
+
+            actual = hashlib.sha256(file.read_bytes()).hexdigest()
+            if actual != expected:
+                return False
+
+        return True
+    except (OSError, ValueError, TypeError):
+        return False
+
 
 if __name__ == "__main__":
     print("SIRI VERSION:", get_version()["version"])

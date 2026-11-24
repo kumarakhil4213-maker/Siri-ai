@@ -1,3 +1,5 @@
+import hashlib
+import json
 #!/usr/bin/env python3
 """Safer restore helper for the SIRI web project."""
 
@@ -11,6 +13,32 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent
 BACKUPS = BASE / "updates" / "backups"
 RESTORE_ITEMS = ("server.py", "static", "start.sh", "version.json")
+
+
+def verify_backup_hashes(source):
+    manifest = source / "SHA256SUMS.json"
+
+    # पुराने Backup में manifest नहीं है, इसलिए legacy restore की अनुमति।
+    if not manifest.exists():
+        return
+
+    hashes = json.loads(manifest.read_text(encoding="utf-8"))
+    if not isinstance(hashes, dict) or not hashes:
+        raise ValueError("SHA-256 manifest गलत है; Restore रोक दिया गया।")
+
+    for name, expected in hashes.items():
+        relative = Path(name)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError("Manifest में असुरक्षित path मिला।")
+
+        saved = source / relative
+        if not saved.is_file() or saved.is_symlink():
+            raise ValueError(f"Backup file गायब या असुरक्षित है: {name}")
+
+        actual = hashlib.sha256(saved.read_bytes()).hexdigest()
+        if actual != expected:
+            raise ValueError(f"SHA-256 जाँच विफल: {name}")
+
 
 
 def remove_path(path):
@@ -77,6 +105,8 @@ def restore(name):
         raise ValueError("Backup folder नहीं मिला।")
     if not (source / "BACKUP_COMPLETE.txt").is_file():
         raise ValueError("Backup अधूरा है; Restore रोक दिया गया।")
+
+    verify_backup_hashes(source)
 
     # Validate every required item before touching the live project.
     for item in RESTORE_ITEMS:

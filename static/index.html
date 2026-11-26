@@ -2,20 +2,137 @@
 <style>
 body{margin:0;background:#09111f;color:#edf5ff;font:16px system-ui}header,main,#bottom{max-width:760px;margin:auto;padding:16px}header{border-bottom:1px solid #345;display:flex;justify-content:space-between}h1{margin:0;color:#60e5df}button{padding:11px 15px;border:1px solid #456;border-radius:12px;background:#17304a;color:white;font-size:16px}input,textarea{padding:12px;border-radius:12px;border:1px solid #456;background:#101e32;color:white;font:inherit;min-width:0}textarea{width:95%;height:55px}#chat{height:42vh;overflow:auto;background:#101b2d;padding:12px;border-radius:16px}.msg{padding:12px;margin:9px 0;border-radius:12px;white-space:pre-wrap}.user{background:#204361;text-align:right}.ai{background:#1a2940}.row{display:flex;gap:8px;margin:10px 0}.row input{flex:1;width:60%}.tabs{display:flex;gap:8px;margin:12px 0}.view{display:none}.view.on{display:block}.note{color:#9fb2c9;font-size:13px}
 </style></head><body><header><div><h1>S I R I</h1><small>GEMINI AI · SHARED MEMORY</small></div><div id="status">जाँच…</div></header><main>
-<div class="tabs"><button onclick="show('chat')">चैट</button><button onclick="show('mem')">याददाश्त</button><button onclick="show('updates')">अपडेट</button></div>
+<div class="tabs"><button onclick="show('chat')">चैट</button><button onclick="show('mem')">याददाश्त</button><button onclick="show('updates')">अपडेट</button><button onclick="show('security')">सुरक्षा</button><button onclick="show('diagnostics')">जाँच</button><button onclick="show('repair')">मरम्मत</button></div>
 <section id="chat" class="view on"><div class="msg ai">नमस्ते! मुझसे हिंदी में बात कीजिए।</div></section>
 <section id="mem" class="view"><p class="note">यह वही मेमोरी है जो Termux SIRI अकाउंट इस्तेमाल करता है।</p><div class="row"><input id="memory" placeholder="याद रखने वाली बात लिखें"><button onclick="saveMem()">सेव</button></div><div id="items"></div></section>
 <section id="updates" class="view">
-<h3>SIRI अपडेट</h3>
+<h3>SIRI अपडेट और इंस्टॉल</h3>
 <p id="updateStatus">अपडेट की स्थिति अभी जाँची नहीं गई है।</p>
 <button onclick="checkSiriUpdate()">अपडेट चेक करें</button>
+<button onclick="window.location.href='/download/Siri.apk'">Install SIRI</button>
+<button onclick="window.location.href='/download/Siri.apk'">Update SIRI / APK डाउनलोड</button>
+<button onclick="window.location.href='intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.k2fsa.sherpa.onnx;end'">Open SIRI</button>
+<p>इंस्टॉल या अपडेट के बाद Android की पुष्टि आवश्यक होगी।</p>
+</section>
+<section id="security" class="view">
+<h3>SIRI सुरक्षा डैशबोर्ड</h3>
+<button onclick="loadBackups()">बैकअप जाँचें</button>
+<p id="backupStatus">बैकअप की स्थिति अभी जाँची नहीं गई है।</p>
+<button onclick="createBackup()">नया Backup बनाएँ</button>
+<div id="backupItems"></div>
+</section>
+
+<section id="diagnostics" class="view">
+<h3>SIRI Self-Check</h3>
+<p class="note">यह जाँच केवल सिस्टम की स्थिति पढ़ेगी। कोई फाइल नहीं बदलेगी।</p>
+<button onclick="runSelfCheck()">Self-Check चलाएँ</button>
+<p id="selfCheckSummary">अभी जाँच नहीं हुई है।</p>
+<div id="selfCheckResults"></div>
+</section>
+
+<section id="repair" class="view">
+<h3>SIRI Self-Repair</h3>
+<p class="note">पहले खराबी की जाँच होगी। आपकी अनुमति के बिना कोई फाइल नहीं बदली जाएगी।</p>
+<button onclick="runRepairDiagnosis()">मरम्मत जाँचें</button>
+<p id="repairSummary">अभी जाँच नहीं हुई है।</p>
+<div id="repairResults"></div>
+<button onclick="runRepairPlan()">Repair Plan देखें</button>
+<p id="repairPlanSummary">अभी Repair Plan नहीं देखा गया है।</p>
+<div id="repairPlanResults"></div>
+<p id="repairApprovalStatus">Approval: अभी Pending है।</p>
+<p id="repairBackupStatus">Backup: अभी verify नहीं हुआ है।</p>
+<input id="repairBackupName" placeholder="Verified Backup का पूरा नाम">
+<button id="repairApproveBtn" onclick="approveRepair()" disabled>मैं इस Repair Plan को Approve करता/करती हूँ</button>
+<p class="note">सुरक्षा: Approval दर्ज करने से Repair execute नहीं होगी।</p>
 </section>
 </main><div id="bottom"><div class="row"><textarea id="q" placeholder="अपना सवाल लिखें…"></textarea><button id="micBtn" onclick="startSiriListening()">🎤 बोलें</button>
 <button onclick="stopSiriVoice()">⏹ रोकें</button>
 <button onclick="send()">भेजें</button></div><p class="note">Termux सर्वर चालू रखें: http://127.0.0.1:8765</p></div>
 <script>
 let hist=[];
-function show(id){document.querySelectorAll('.view').forEach(x=>x.classList.toggle('on',x.id===id));if(id==='mem')loadMem();if(id==='updates')checkSiriUpdate()}
+let repairPlanId='';
+let repairPlanHasActions=false;
+
+async function loadBackups(){
+ const status=document.getElementById('backupStatus');
+ const box=document.getElementById('backupItems');
+ status.textContent='बैकअप जाँचे जा रहे हैं...';
+ box.textContent='';
+ try{
+  const r=await fetch('/api/backups');
+  if(!r.ok) throw new Error('API Error '+r.status);
+  const d=await r.json();
+  if(!d.items || !d.items.length){
+   status.textContent='कोई Backup नहीं मिला';
+   return;
+  }
+  status.textContent='कुल Backup: '+d.items.length;
+  d.items.forEach(x=>{
+   const p=document.createElement('p');
+   p.textContent=x.name+' | SHA-256: '+(x.sha256_verified?'PASS':'UNVERIFIED')+' | Manifest: '+(x.has_manifest?'हाँ':'नहीं')+' ';
+   const restoreBtn=document.createElement('button');
+   restoreBtn.textContent='Restore';
+   restoreBtn.disabled=!(x.sha256_verified && x.has_manifest);
+   restoreBtn.onclick=async()=>{
+    if(!confirm('क्या '+x.name+' से SIRI code Restore करना चाहते हैं? मौजूदा server.py, static, start.sh और version.json बदलेंगे। पहले सुरक्षा Backup बनेगा।'))return;
+    restoreBtn.disabled=true;
+    try{
+     const rr=await fetch('/api/restore-backup',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:x.name})
+     });
+     const rd=await rr.json();
+     if(!rr.ok)throw Error(rd.error||'Restore विफल');
+     status.textContent=rd.message;
+     await loadBackups();
+    }catch(e){
+     status.textContent='Restore विफल: '+e.message;
+     restoreBtn.disabled=false;
+    }
+   };
+   p.appendChild(restoreBtn);
+   const btn=document.createElement('button');
+   btn.textContent='Delete';
+   btn.onclick=async()=>{
+    if(!confirm('क्या आप यह Backup हमेशा के लिए Delete करना चाहते हैं?\\n'+x.name))return;
+    btn.disabled=true;
+    try{
+     const dr=await fetch('/api/delete-backup',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:x.name})
+     });
+     const dd=await dr.json();
+     if(!dr.ok)throw Error(dd.error||'Delete विफल');
+     status.textContent=dd.message;
+     await loadBackups();
+    }catch(e){
+     status.textContent='Delete विफल: '+e.message;
+     btn.disabled=false;
+    }
+   };
+   p.appendChild(btn);
+   box.appendChild(p);
+  });
+ }catch(e){
+  status.textContent='जाँच विफल: '+e.message;
+ }
+}
+
+function show(id){document.querySelectorAll('.view').forEach(x=>x.classList.toggle('on',x.id===id));if(id==='mem')loadMem();if(id==='updates')checkSiriUpdate();if(id==='security')loadBackups();if(id==='diagnostics')runSelfCheck()}
+
+async function createBackup(){
+ const status=document.getElementById("backupStatus");
+ status.textContent="नया Backup बनाया जा रहा है...";
+ try{
+  const r=await fetch("/api/backup",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+  const d=await r.json();
+  if(!r.ok)throw Error(d.message||d.error||"Backup विफल");
+  status.textContent=d.message+" | "+d.name+" | SHA-256: "+(d.sha256_verified?"PASS":"FAIL");
+  await loadBackups();
+ }catch(e){status.textContent="Backup विफल: "+e.message;}
+}
 
 async function checkSiriUpdate(){
 let el=document.getElementById('updateStatus');
@@ -72,6 +189,140 @@ function startSiriListening() {
     alert("माइक समस्या: " + e.error + "। Chrome की Microphone अनुमति जाँचें।");
   };
   rec.start();
+}
+
+
+async function runSelfCheck(){
+ const summary=document.getElementById('selfCheckSummary');
+ const results=document.getElementById('selfCheckResults');
+ summary.textContent='जाँच जारी है...';
+ results.textContent='';
+ try{
+  const response=await fetch('/api/self-check',{cache:'no-store'});
+  const data=await response.json();
+  if(!response.ok) throw new Error(data.error||('HTTP '+response.status));
+  summary.textContent=data.passed+'/'+data.total+' जाँच सफल'+(data.all_ok?' — सभी ठीक हैं।':' — कुछ जाँच विफल हैं।');
+  for(const [key,ok] of Object.entries(data.checks)){
+   const item=document.createElement('p');
+   item.textContent=(ok?'✓ ':'✗ ')+key;
+   results.appendChild(item);
+  }
+ }catch(e){summary.textContent='Self-Check विफल: '+e.message;}
+}
+
+async function runRepairDiagnosis(){
+ const summary=document.getElementById('repairSummary');
+ const results=document.getElementById('repairResults');
+ summary.textContent='Repair Diagnosis जारी है...';
+ results.textContent='';
+ try{
+  const response=await fetch('/api/repair-diagnose',{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:'{}',
+   cache:'no-store'
+  });
+  const data=await response.json();
+  if(!response.ok) throw new Error(data.error||('HTTP '+response.status));
+  const failed=data.failed||[];
+  summary.textContent=failed.length
+   ? failed.length+' समस्या मिली।'
+   : 'कोई समस्या नहीं मिली। सभी जाँच सफल हैं।';
+  for(const [key,ok] of Object.entries(data.checks||{})){
+   const item=document.createElement('p');
+   item.textContent=(ok?'✓ ':'✗ ')+key;
+   results.appendChild(item);
+  }
+  for(const suggestion of data.suggestions||[]){
+   const item=document.createElement('p');
+   item.textContent='सुझाव: '+suggestion;
+   results.appendChild(item);
+  }
+  const note=document.createElement('p');
+  note.textContent=data.repair_requires_approval
+   ? 'सुरक्षा: किसी भी बदलाव से पहले आपकी अनुमति आवश्यक है।'
+   : 'Repair approval status उपलब्ध नहीं है।';
+  results.appendChild(note);
+ }catch(e){
+  summary.textContent='Diagnosis विफल: '+e.message;
+ }
+}
+
+async function runRepairPlan(){
+ const summary=document.getElementById('repairPlanSummary');
+ const results=document.getElementById('repairPlanResults');
+ summary.textContent='Repair Plan तैयार हो रहा है...';
+ results.replaceChildren();
+ try{
+  const response=await fetch('/api/repair-plan',{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({})
+  });
+  const data=await response.json();
+  if(!response.ok) throw new Error(data.error||'HTTP '+response.status);
+  summary.textContent=data.message||'Repair Plan प्राप्त हुआ।';
+  repairPlanId=data.plan_id||'';
+  repairPlanHasActions=(data.plan||[]).length>0;
+  document.getElementById('repairApprovalStatus').textContent=
+   repairPlanHasActions?'Approval: आपकी अनुमति बाकी है।':'Approval: कोई Repair action नहीं है।';
+  document.getElementById('repairApproveBtn').disabled=
+   !repairPlanId||!repairPlanHasActions;
+  document.getElementById('repairBackupStatus').textContent=
+   'Backup: Approval से पहले SHA-256 verification आवश्यक है।';
+  for(const item of data.plan||[]){
+   const row=document.createElement('p');
+   row.textContent=item.check+': '+item.proposed_action+
+    (item.requires_approval?' (अनुमति आवश्यक)':'');
+   results.appendChild(row);
+  }
+  if(!(data.plan||[]).length){
+   const row=document.createElement('p');
+   row.textContent='कोई Repair action आवश्यक नहीं है।';
+   results.appendChild(row);
+  }
+  const note=document.createElement('p');
+  note.textContent=data.repair_requires_approval
+   ? 'सुरक्षा: किसी भी वास्तविक मरम्मत से पहले आपकी अनुमति आवश्यक है।'
+   : 'Approval status उपलब्ध नहीं है।';
+  results.appendChild(note);
+ }catch(e){
+  summary.textContent='Repair Plan विफल: '+e.message;
+ }
+}
+
+
+async function approveRepair(){
+ const status=document.getElementById('repairApprovalStatus');
+ const backupName=document.getElementById('repairBackupName').value.trim();
+ const button=document.getElementById('repairApproveBtn');
+ if(!repairPlanId||!repairPlanHasActions){
+  status.textContent='Approval रोक दिया गया: वैध Repair Plan उपलब्ध नहीं है।';
+  return;
+ }
+ if(!backupName){
+  status.textContent='पहले verified Backup का पूरा नाम भरें।';
+  return;
+ }
+ button.disabled=true;
+ status.textContent='Backup verification और Approval दर्ज हो रहा है...';
+ try{
+  const response=await fetch('/api/repair-approve',{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({plan_id:repairPlanId,backup_name:backupName})
+  });
+  const data=await response.json();
+  if(!response.ok) throw new Error(data.error||'HTTP '+response.status);
+  status.textContent=data.message||'Approval दर्ज हुआ।';
+  document.getElementById('repairBackupStatus').textContent=
+   'Backup SHA-256 Verified: '+(data.sha256_verified?'हाँ':'नहीं')+
+   ' ('+data.backup_name+')';
+  status.textContent+=' Repair Execute हुई: '+(data.repair_executed?'हाँ':'नहीं');
+ }catch(e){
+  status.textContent='Approval विफल: '+e.message;
+  button.disabled=false;
+ }
 }
 
 </script></body></html>
